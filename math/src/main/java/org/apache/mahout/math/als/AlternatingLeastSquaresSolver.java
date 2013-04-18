@@ -77,11 +77,14 @@ public final class AlternatingLeastSquaresSolver {
     double lambdaTimesNui = lambda * nui;
     int rows = MiIi.numRows();
 
+    double[][] valuesOfMiIi = ((DenseMatrix) MiIi).underlyingValues();
+
     double[][] result = new double[rows][rows];
 
     for (int i = 0; i < rows; i++) {
+
       for (int j = i; j < rows; j++) {
-        double dot = MiIi.viewRow(i).dot(MiIi.viewRow(j));
+        double dot = dot(valuesOfMiIi[i], valuesOfMiIi[j]);
         if (i != j) {
           result[i][j] = dot;
           result[j][i] = dot;
@@ -91,6 +94,14 @@ public final class AlternatingLeastSquaresSolver {
       }
     }
     return new DenseMatrix(result, true);
+  }
+
+  private static double dot(double[] x, double[] y) {
+    double sum = 0;
+    for (int n = 0; n < x.length; n++) {
+      sum += x[n] * y[n];
+    }
+    return sum;
   }
 
 

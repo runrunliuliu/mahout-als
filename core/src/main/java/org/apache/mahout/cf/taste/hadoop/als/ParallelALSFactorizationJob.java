@@ -92,6 +92,9 @@ public class ParallelALSFactorizationJob extends AbstractJob {
   private double alpha;
   private int numThreadsPerSolver;
 
+  private Path preprocessPath;
+
+
   public static void main(String[] args) throws Exception {
     ToolRunner.run(new ParallelALSFactorizationJob(), args);
   }
@@ -108,6 +111,9 @@ public class ParallelALSFactorizationJob extends AbstractJob {
     addOption("numIterations", null, "number of iterations", true);
     addOption("numThreadsPerSolver", null, "threads per solver mapper", String.valueOf(1));
 
+    addOption("preprocessPath", null, "", false);
+    addOption("preprocessOnly", null, "", String.valueOf(false));
+
     Map<String,List<String>> parsedArgs = parseArguments(args);
     if (parsedArgs == null) {
       return -1;
@@ -121,44 +127,62 @@ public class ParallelALSFactorizationJob extends AbstractJob {
 
     numThreadsPerSolver = Integer.parseInt(getOption("numThreadsPerSolver"));
 
-    /*
-    * compute the factorization A = U M'
-    *
-    * where A (users x items) is the matrix of known ratings
-    *           U (users x features) is the representation of users in the feature space
-    *           M (items x features) is the representation of items in the feature space
-    */
+    boolean preprocessOnly = Boolean.parseBoolean(getOption("preprocessOnly"));
 
-   /* create A' */
-    Job itemRatings = prepareJob(getInputPath(), pathToItemRatings(),
-        TextInputFormat.class, ItemRatingVectorsMapper.class, IntWritable.class,
-        VectorWritable.class, VectorSumReducer.class, IntWritable.class,
-        VectorWritable.class, SequenceFileOutputFormat.class);
-    itemRatings.setCombinerClass(VectorSumReducer.class);
-    boolean succeeded = itemRatings.waitForCompletion(true);
-    if (!succeeded) {
-      return -1;
+    if (hasOption("preprocessPath")) {
+      preprocessPath = new Path(getOption("preprocessPath"));
+    } else {
+
+      if (preprocessOnly) {
+        preprocessPath = getOutputPath();
+      }
+
+      /*
+      * compute the factorization A = U M'
+      *
+      * where A (users x items) is the matrix of known ratings
+      *           U (users x features) is the representation of users in the feature space
+      *           M (items x features) is the representation of items in the feature space
+      */
+
+     /* create A' */
+      Job itemRatings = prepareJob(getInputPath(), pathToItemRatings(),
+          TextInputFormat.class, ItemRatingVectorsMapper.class, IntWritable.class,
+          VectorWritable.class, VectorSumReducer.class, IntWritable.class,
+          VectorWritable.class, SequenceFileOutputFormat.class);
+      itemRatings.setCombinerClass(VectorSumReducer.class);
+      boolean succeeded = itemRatings.waitForCompletion(true);
+      if (!succeeded) {
+        return -1;
+      }
+
+      /* create A */
+      Job userRatings = prepareJob(pathToItemRatings(), pathToUserRatings(),
+          TransposeMapper.class, IntWritable.class, VectorWritable.class, MergeVectorsReducer.class, IntWritable.class,
+          VectorWritable.class);
+      userRatings.setCombinerClass(MergeVectorsCombiner.class);
+      succeeded = userRatings.waitForCompletion(true);
+      if (!succeeded) {
+        return -1;
+      }
+
+      //TODO this could be fiddled into one of the upper jobs
+      Job averageItemRatings = prepareJob(pathToItemRatings(), pathToAverageRatings(),
+          AverageRatingMapper.class, IntWritable.class, VectorWritable.class, MergeVectorsReducer.class,
+          IntWritable.class, VectorWritable.class);
+      averageItemRatings.setCombinerClass(MergeVectorsCombiner.class);
+      succeeded = averageItemRatings.waitForCompletion(true);
+      if (!succeeded) {
+        return -1;
+      }
+
+      preprocessPath = getTempPath();
     }
 
-    /* create A */
-    Job userRatings = prepareJob(pathToItemRatings(), pathToUserRatings(),
-        TransposeMapper.class, IntWritable.class, VectorWritable.class, MergeVectorsReducer.class, IntWritable.class,
-        VectorWritable.class);
-    userRatings.setCombinerClass(MergeVectorsCombiner.class);
-    succeeded = userRatings.waitForCompletion(true);
-    if (!succeeded) {
-      return -1;
+    if (preprocessOnly) {
+      return 0;
     }
 
-    //TODO this could be fiddled into one of the upper jobs
-    Job averageItemRatings = prepareJob(pathToItemRatings(), getTempPath("averageRatings"),
-        AverageRatingMapper.class, IntWritable.class, VectorWritable.class, MergeVectorsReducer.class,
-        IntWritable.class, VectorWritable.class);
-    averageItemRatings.setCombinerClass(MergeVectorsCombiner.class);
-    succeeded = averageItemRatings.waitForCompletion(true);
-    if (!succeeded) {
-      return -1;
-    }
 
     Vector averageRatings = ALS.readFirstRow(getTempPath("averageRatings"), getConf());
 
@@ -296,11 +320,15 @@ public class ParallelALSFactorizationJob extends AbstractJob {
     return iteration == numIterations - 1 ? getOutputPath("U") : getTempPath("U-" + iteration);
   }
 
+  private Path pathToAverageRatings() {
+    return new Path(preprocessPath, "averageRatings");
+  }
+
   private Path pathToItemRatings() {
-    return getTempPath("itemRatings");
+    return new Path(preprocessPath, "itemRatings");
   }
 
   private Path pathToUserRatings() {
-    return getOutputPath("userRatings");
+    return new Path(preprocessPath, "userRatings");
   }
 }

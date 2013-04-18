@@ -173,6 +173,7 @@ public class ALSWRFactorizer extends AbstractFactorizer {
     }
 
     for (int iteration = 0; iteration < numIterations; iteration++) {
+      long start = System.currentTimeMillis();
       log.info("iteration {}", iteration);
 
       /* fix M - compute U */
@@ -249,6 +250,7 @@ public class ALSWRFactorizer extends AbstractFactorizer {
           log.warn("Error when computing item features", e);
         }
       }
+      System.out.println(System.currentTimeMillis() - start);
     }
 
     log.info("finished computation of the factorization...");

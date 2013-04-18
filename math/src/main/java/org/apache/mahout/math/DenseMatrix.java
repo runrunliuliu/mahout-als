@@ -63,6 +63,10 @@ public class DenseMatrix extends AbstractMatrix {
     this.values = new double[rows][columns];
   }
 
+  public double[][] underlyingValues() {
+    return values;
+  }
+
   @Override
   public Matrix clone() {
     DenseMatrix clone = (DenseMatrix) super.clone();

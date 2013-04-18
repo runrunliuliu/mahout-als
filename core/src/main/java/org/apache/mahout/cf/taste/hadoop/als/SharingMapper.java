@@ -42,7 +42,9 @@ public abstract class SharingMapper<K1,V1,K2,V2,S> extends Mapper<K1,V1,K2,V2> {
   abstract S createSharedInstance(Context context);
 
   final void setupSharedInstance(Context context) {
-    sharedInstance = createSharedInstance(context);
+    if (sharedInstance == null) {
+      sharedInstance = createSharedInstance(context);
+    }
   }
 
   final S getSharedInstance() {
